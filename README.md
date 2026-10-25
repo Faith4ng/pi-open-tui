@@ -49,6 +49,8 @@ The default `auto` mode checks the terminal environment, not the installed font 
 
 If the font is installed but `auto` still selects ASCII, choose `nerd` explicitly. In VS Code, Windows Terminal, and similar apps, configure the font in the terminal profile rather than only installing it in the operating system. If your SSH client terminal does ship a Nerd Font and you want the full icon set over SSH, set the mode to `nerd` explicitly.
 
+The footer reserves an extra blank cell after Nerd Font icons, including runtime icons. This keeps wide glyphs from visually consuming the gap before their labels in terminals such as Kitty. The spacing is included in regular and inline footer width calculations; Unicode/ASCII icons and compact Git status flags are unchanged.
+
 ## Configuration
 
 Run `/open-tui` to open the settings dialog. It provides **General**, **Appearance**, **Footer**, and **Telemetry** tabs. Settings are stored in `~/.pi/agent/open-tui.json`:
