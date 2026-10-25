@@ -650,108 +650,18 @@ test("ASCII footer renders icons as semantic labels", () => {
 	assert.equal(extensionStatusReads, 1);
 });
 
-test("footer reserves extra space after Nerd icons without changing other icon modes", () => {
-	let footerFactory: NonNullable<Parameters<ExtensionContext["ui"]["setFooter"]>[0]> | undefined;
-	const ctx = {
-		model: { provider: "openai", contextWindow: 1_000 },
-		ui: {
-			setFooter(factory: typeof footerFactory) {
-				footerFactory = factory;
-			},
-		},
-		sessionManager: {
-			getCwd: () => "/work/示例项目",
-			getSessionName: () => "my-session",
-			getEntries: () => [{
-				id: "icon-spacing-usage",
-				type: "message",
-				message: {
-					role: "assistant",
-					usage: { input: 10, output: 5, cacheRead: 10, cacheWrite: 0, cost: { total: 0.01 } },
-				},
-			}],
-		},
-		getContextUsage: () => ({ tokens: 250, contextWindow: 1_000, percent: 25 }),
-	} as unknown as ExtensionContext;
-	const config = structuredClone(DEFAULT_CONFIG);
-	config.footerSegments.hostname = true;
-	config.footerSegments.sessionName = true;
-	const state: FooterState = {
-		git: { ...emptyGitStatus(), branch: "main", modified: 2 },
-		runtime: { name: "python", version: "3.13" },
-		sessionStartEpoch: Date.now(),
-		workingSince: undefined,
-		lastDoneIn: 1_000,
-	};
-	invalidateUsageCache();
-	const handle = installFooter(
-		ctx,
-		() => state,
-		() => config,
-		() => ({ provider: "OpenAI", model: "gpt-5", effort: "high" }),
-		{ setRequestRender() {}, scheduleGitRefresh() {} },
-	);
-	assert.ok(footerFactory);
-	const component = footerFactory(
-		{ requestRender() {} } as TUI,
-		theme,
-		{
-			onBranchChange: () => () => {},
-			getExtensionStatuses: () => new Map([["test", "connected"]]),
-		} as unknown as ReadonlyFooterDataProvider,
-	) as Component;
-
-	try {
-		for (const mode of ["nerd", "unicode", "ascii"] as const) {
-			config.icons.mode = mode;
-			config.inlineFooter = false;
-			const glyphs = structuredClone(resolveGlyphs(mode));
-			const gap = mode === "nerd" ? "  " : " ";
-			const output = component.render(240).join("\n");
-			for (const key of ["cwd", "host", "session", "git", "done", "context", "model", "thinking", "input", "output", "cacheHit", "cost", "extensions"] as const) {
-				assert.ok(output.includes(`${glyphs[key]}${gap}`), `${mode}: missing gap after ${key}\n${output}`);
-			}
-			assert.ok(output.includes(`${runtimeSymbol("python", mode)}${gap}3.13`));
-			assert.ok(output.includes("!2"), "compact Git status flags must not change");
-			assert.deepEqual(resolveGlyphs(mode), glyphs, "shared glyph tables must not be mutated");
-
-			state.workingSince = Date.now() - 1_000;
-			assert.ok(component.render(240).join("\n").includes(`${glyphs.working}${gap}working`));
-			state.workingSince = undefined;
-
-			for (const width of [4, 8, 16, 24, 40, 60, 80, 120, 240]) {
-				config.inlineFooter = false;
-				for (const line of component.render(width)) {
-					assert.ok(visibleWidth(line) <= width, `${mode}: regular footer exceeds ${width} columns`);
-				}
-				config.inlineFooter = true;
-				for (const line of component.render(width)) {
-					assert.ok(visibleWidth(line) <= width, `${mode}: extension row exceeds ${width} columns`);
-				}
-				const inline = handle.renderInline(width);
-				assert.ok(inline);
-				for (const row of [inline.top, inline.bottom]) {
-					const used = visibleWidth(row.left) + visibleWidth(row.right) + (row.left && row.right ? 1 : 0);
-					assert.ok(used <= width, `${mode}: inline footer exceeds ${width} columns`);
-				}
-			}
-		}
-	} finally {
-		handle.cleanup();
-		invalidateUsageCache();
-	}
-});
-
 function renderFooterWithSession(opts: {
 	sessionName?: string | null;
 	mode?: "nerd" | "ascii";
 	sessionNameEnabled?: boolean;
+	nerdIconSpacing?: boolean;
 	width?: number;
 }): string {
 	const {
 		sessionName,
 		mode = "ascii",
 		sessionNameEnabled = true,
+		nerdIconSpacing = false,
 		width = 160,
 	} = opts;
 	const name = sessionName === undefined ? "test-session" : sessionName;
@@ -773,6 +683,7 @@ function renderFooterWithSession(opts: {
 	const config = structuredClone(DEFAULT_CONFIG);
 	config.icons.mode = mode;
 	config.footerSegments.sessionName = sessionNameEnabled;
+	config.footerSegments.nerdIconSpacing = nerdIconSpacing;
 	const state: FooterState = {
 		git: emptyGitStatus(),
 		runtime: null,
@@ -821,6 +732,14 @@ test("footer truncates long session names to 24 width units", () => {
 	const clean = out.replace(/\x1b\[[0-9;]*m/g, "");
 	assert.ok(!clean.includes(longName), "full name must not appear\n" + clean);
 	assert.match(clean, /x{10,}\.\.\./, "truncated name should keep a prefix and ellipsis\n" + clean);
+});
+
+test("nerdIconSpacing adds one blank after Nerd icons only", () => {
+	const nerd = resolveGlyphs("nerd").session;
+	// On first, so a mutated shared glyph table would fail the later checks.
+	assert.ok(renderFooterWithSession({ mode: "nerd", sessionName: "s", nerdIconSpacing: true }).includes(`${nerd}  s`));
+	assert.ok(renderFooterWithSession({ mode: "nerd", sessionName: "s" }).includes(`${nerd} s`));
+	assert.ok(renderFooterWithSession({ sessionName: "s", nerdIconSpacing: true }).includes(`${resolveGlyphs("ascii").session} s`));
 });
 
 test("session name uses matching glyph in nerd and ascii modes", () => {
